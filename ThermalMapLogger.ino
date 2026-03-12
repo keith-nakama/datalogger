@@ -310,10 +310,10 @@ void handleData() {
   }
   json += "]";
 
-  server.send(200, "application/json", json);
-
   // ロギング中ならSDカードに同じデータを記録
   saveToSD(pixels);
+
+  server.send(200, "application/json", json);
 }
 
 // ============================================================
