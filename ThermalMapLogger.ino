@@ -424,8 +424,10 @@ void handleList() {
       if(json != "[") json += ","; // 2件目以降はカンマで区切る
       json += "\"" + String(file.name()) + "\"";
     }
-    file = root.openNextFile(); // 次のファイルへ
+    file.close();                    // ファイルをクローズ
+    file = root.openNextFile();      // 次のファイルへ
   }
+  root.close();                      // ディレクトリをクローズ
   json += "]";
   server.send(200, "application/json", json);
 }
