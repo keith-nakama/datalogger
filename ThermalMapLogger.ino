@@ -1,7 +1,7 @@
 /**
  * ============================================================
  *  06_ThermalMapLogger.ino
- *  Thermal Mapper v13.1
+ *  Thermal Mapper v13.2
  * ============================================================
  *
  *  【概要】
@@ -90,6 +90,7 @@ WebServer server(80);
 // ============================================================
 String currentLogFile = "";  // 空文字 = ファイル未作成
 bool isLogging = false;      // false = 停止中、true = 記録中
+File logFile;                // ログファイルを開きっぱなしで保持 (Issue #1対応)
 
 // ============================================================
 //  Web UI (HTML/CSS/JavaScript)
@@ -107,7 +108,7 @@ bool isLogging = false;      // false = 停止中、true = 記録中
 // ============================================================
 const char INDEX_HTML[] PROGMEM = R"=====(
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Thermal Mapper v13.1</title>
+<title>Thermal Mapper v13.2</title>
 <style>
   body { font-family: sans-serif; text-align: center; background: #121212; color: #eee; margin:0; padding:10px; }
   /* 8x8グリッド: vw単位でスマホでも全画面表示 */
@@ -231,43 +232,60 @@ const char INDEX_HTML[] PROGMEM = R"=====(
 //  2025/01/01 12:00:00.05, 22.50, 23.00, 24.25, ... (64値)
 //                 ↑センチ秒(1/100秒)
 //
-//  isLogging=false または currentLogFile="" のときは何もしない。
+//  isLogging=false または logFileが未オープンのときは何もしない。
 //  /data エンドポイントへのアクセスごとに呼び出される。
+//
+//  【Issue #1対応】
+//  毎回open/closeするのではなく、handleToggle()でopenしたlogFileを
+//  保持しっぱなしにして書き込みだけ行い、flush()でSDに確定させる。
+//  これによりFATテーブルの書き換え回数を大幅に削減し、
+//  SDカードの寿命と書き込み速度を改善する。
 // ============================================================
 void saveToSD(float* pixels) {
-  // ロギング無効またはファイル未作成なら即リターン
-  if (!isLogging || currentLogFile == "") return;
+  // ロギング無効またはファイルが開いていなければ即リターン
+  if (!isLogging || !logFile) return;
 
-  // SDカードのファイルを追記モードで開く
-  File file = SD_MMC.open(currentLogFile, FILE_APPEND);
-  if(file) {
-    // マイクロ秒精度でシステム時刻を取得
-    struct timeval tv;
-    gettimeofday(&tv, NULL);     // tv.tv_sec = 秒, tv.tv_usec = マイクロ秒
+  // マイクロ秒精度でシステム時刻を取得
+  struct timeval tv;
+  gettimeofday(&tv, NULL);     // tv.tv_sec = 秒, tv.tv_usec = マイクロ秒
 
-    // UNIXタイムをローカル時刻(JST)に変換
-    struct tm ti;
-    localtime_r(&tv.tv_sec, &ti);
+  // UNIXタイムをローカル時刻(JST)に変換
+  struct tm ti;
+  localtime_r(&tv.tv_sec, &ti);
 
-    // 日時文字列を組み立て (例: "2025/01/01 12:00:00.05")
-    // centisec = マイクロ秒 / 10000 → 0〜99のセンチ秒
-    char timeStr[64];
-    int centisec = (int)(tv.tv_usec / 10000);
-    snprintf(timeStr, sizeof(timeStr), "%04d/%02d/%02d %02d:%02d:%02d.%02d",
-             ti.tm_year + 1900,  // tm_year は1900年からの経過年数
-             ti.tm_mon + 1,      // tm_mon は0始まり(0=1月)
-             ti.tm_mday,
-             ti.tm_hour, ti.tm_min, ti.tm_sec,
-             centisec);
+  // 日時文字列を組み立て (例: "2025/01/01 12:00:00.05")
+  // centisec = マイクロ秒 / 10000 → 0〜99のセンチ秒
+  char timeStr[64];
+  int centisec = (int)(tv.tv_usec / 10000);
+  snprintf(timeStr, sizeof(timeStr), "%04d/%02d/%02d %02d:%02d:%02d.%02d",
+           ti.tm_year + 1900,  // tm_year は1900年からの経過年数
+           ti.tm_mon + 1,      // tm_mon は0始まり(0=1月)
+           ti.tm_mday,
+           ti.tm_hour, ti.tm_min, ti.tm_sec,
+           centisec);
 
-    // "日時,画素0,画素1,...,画素63" の形式で書き込み
-    file.print(timeStr);
-    for(int i = 0; i < 64; i++) {
-      file.print(",");
-      file.print(pixels[i], 2); // 小数2桁(例: 22.50)
+  // "日時,画素0,画素1,...,画素63" の形式で書き込み
+  logFile.print(timeStr);
+  for(int i = 0; i < 64; i++) {
+    logFile.print(",");
+    logFile.print(pixels[i], 2); // 小数2桁(例: 22.50)
+  }
+  logFile.println(); // 行末の改行
+  logFile.flush();   // closeせずにSDへ書き込みを確定 (open状態を維持)
+
+  // 1分に1回だけclose→openしてFATテーブルを確定させる
+  // 0.5秒ごとに呼ばれるので 120回 = 約60秒
+  // 万が一の電源断時にも最大1分分のデータ損失で済むよう保護する
+  static int flushCount = 0;
+  if (++flushCount >= 120) {
+    flushCount = 0;
+    logFile.close();
+    logFile = SD_MMC.open(currentLogFile, FILE_APPEND);
+    if (!logFile) {
+      // 再openに失敗した場合はロギングを安全停止
+      isLogging = false;
+      Serial.println("SaveToSD Error: Failed to reopen log file. Logging stopped.");
     }
-    file.println(); // 行末の改行
-    file.close();   // 必ずcloseしてSDへの書き込みを確定させる
   }
 }
 
@@ -329,7 +347,9 @@ void handleSync() {
 //  
 //  OFF→ON時: タイムスタンプをファイル名にしたCSVを新規作成し
 //            UTF-8 BOMとヘッダー行を書き込む。
-//  ON→OFF時: isLoggingをfalseにするだけ(ファイルは保持)。
+//            【Issue #1対応】ファイルはcloseせずlogFileに保持する。
+//            【Issue #4対応】open失敗時はisLoggingをfalseに戻す。
+//  ON→OFF時: logFileをcloseしてisLoggingをfalseにする。
 //
 //  レスポンス: "Recording" または "Stopped"
 //
@@ -351,27 +371,35 @@ void handleToggle() {
     strftime(buf, sizeof(buf), "/%Y%m%d_%H%M%S.csv", &ti);
     currentLogFile = String(buf);
 
-    // 新規ファイルを書き込みモードで作成
-    File file = SD_MMC.open(currentLogFile, FILE_WRITE);
-    if(file) {
+    // 新規ファイルを書き込みモードで作成し、グローバル変数logFileに保持
+    logFile = SD_MMC.open(currentLogFile, FILE_WRITE);
+    if(logFile) {
       // UTF-8 BOM (0xEF 0xBB 0xBF) を先頭に書き込む
       // ExcelでCSVを開いたとき日本語が文字化けしないために必要
       const uint8_t bom[] = {0xEF, 0xBB, 0xBF};
-      file.write(bom, sizeof(bom));
+      logFile.write(bom, sizeof(bom));
 
       // ヘッダー行を書き込む: "datetime,11,12,...,88"
-      file.print("datetime");
+      logFile.print("datetime");
       for(int i = 0; i < 64; i++) {
         int row = (i / 8) + 1; // 画素インデックスから行番号を計算 (1〜8)
         int col = (i % 8) + 1; // 画素インデックスから列番号を計算 (1〜8)
-        file.printf(",%d%d", row, col); // 例: 11, 12, ..., 18, 21, ..., 88
+        logFile.printf(",%d%d", row, col); // 例: 11, 12, ..., 18, 21, ..., 88
       }
-      file.println(); // ヘッダー行末の改行
-      file.close();
+      logFile.println(); // ヘッダー行末の改行
+      // closeしない → logFileを保持してsaveToSD()で使い続ける (Issue #1)
+    } else {
+      // ファイルオープン失敗 → フラグを元に戻してサイレント障害を防ぐ (Issue #4)
+      isLogging = false;
+      currentLogFile = "";
+      Serial.println("Toggle Error: Failed to open log file.");
+    }
+  } else {
+    // ロギング停止: ここで初めてファイルをclose
+    if(logFile) {
+      logFile.close();
     }
   }
-  // ロギング停止時はcurrentLogFileはそのまま保持(再開時に上書き防止のため
-  // handleToggle内でのみファイル名を設定し直す)
 
   // ロギング状態を文字列で返す
   server.send(200, "text/plain", isLogging ? "Recording" : "Stopped");
