@@ -144,20 +144,20 @@ datetime, 11, 12, 13, 14, 15, 16, 17, 18, 21, ... , 88
 
 ### v13.3 変更詳細
 
-- ブラウザ切断時もSD記録を継続（loop()ベースのサンプリングに変更）（#8）
-- 1970年ファイル名問題を修正（millis()差分方式で時刻管理）（#8）
-- 時刻未同期時のロギング開始を拒否（503エラーを返す）（#8）
-- ブラウザ側の時刻同期失敗時にエラーメッセージを表示（#8）
+- ブラウザ切断時もSD記録を継続（loop()ベースのサンプリングに変更）（[#8](https://github.com/keith-nakama/ThermalMapLogger/issues/8)）
+- 1970年ファイル名問題を修正（millis()差分方式で時刻管理）（[#8](https://github.com/keith-nakama/ThermalMapLogger/issues/8)）
+- 時刻未同期時のロギング開始を拒否（503エラーを返す）（[#8](https://github.com/keith-nakama/ThermalMapLogger/issues/8)）
+- ブラウザ側の時刻同期失敗時にエラーメッセージを表示（[#8](https://github.com/keith-nakama/ThermalMapLogger/issues/8)）
 
 ### v13.2 変更詳細
 
-- SDカード書込最適化・毎回open/closeを廃止しflush方式に変更（#1）
-- 電源断対策として1分に1回close→openでFATテーブルを確定（#1）
-- toggle失敗時にisLogging=falseへ安全復帰（#4）
-- データ配信前にSD書込を実行（レスポンス改善）（#2）
-- /deleteエンドポイントのセキュリティ強化（.csvのみ許可）（#3）
-- センサー/SD初期化失敗時のリトライ処理を追加（3回失敗でESP.restart()）（#5）
-- /listエンドポイントのディレクトリクローズ漏れを修正（#6）
+- SDカード書込最適化・毎回open/closeを廃止しflush方式に変更（[#1](https://github.com/keith-nakama/ThermalMapLogger/issues/1)）
+- 電源断対策として1分に1回close→openでFATテーブルを確定（[#1](https://github.com/keith-nakama/ThermalMapLogger/issues/1)）
+- データ配信前にSD書込を実行（レスポンス改善）（[#2](https://github.com/keith-nakama/ThermalMapLogger/issues/2)）
+- /deleteエンドポイントのセキュリティ強化（.csvのみ許可）（[#3](https://github.com/keith-nakama/ThermalMapLogger/issues/3)）
+- toggle失敗時にisLogging=falseへ安全復帰（[#4](https://github.com/keith-nakama/ThermalMapLogger/issues/4)）
+- センサー/SD初期化失敗時のリトライ処理を追加（3回失敗でESP.restart()）（[#5](https://github.com/keith-nakama/ThermalMapLogger/issues/5)）
+- /listエンドポイントのディレクトリクローズ漏れを修正（[#6](https://github.com/keith-nakama/ThermalMapLogger/issues/6)）
 
 ---
 
